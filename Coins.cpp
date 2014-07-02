@@ -223,6 +223,15 @@ inline float c2cDistance(const vector<Point> &a,const vector<Point> &b){
 	//
 	//return d;
 }
+
+inline float c2cRelativeDistance(const vector<Point> &a,const vector<Point> &b){
+	float aArea = contourArea(a);
+	float bArea = contourArea(b);
+	float value = sqrt(aArea) + sqrt(bArea);
+	float d = c2cDistance(a,b);
+	d /= value;
+	return d;
+}
 typedef pair<int, int> P;
 class KeyValueComparison
 {
@@ -386,11 +395,13 @@ void extractDate(int, void*){
 				if(p2pDistance( rects[i].center, rects[j].center) > dateMaxWidth)
 					continue; // too far 
 				// ToDo: check if one contains other
-				int d = cHull2HullcDistance(filteredContours[i], filteredContours[j]);
+				
+	float d = p2pDistance(rects[i].center, rects[j].center);
 				if(d > dateMaxWidth)
 					continue;
-				d = c2cDistance(filteredContours[i], filteredContours[j]);
-				if(d < digitsDistance){
+				
+				d = c2cRelativeDistance(filteredContours[i], filteredContours[j]);
+				if(d < (float)digitsDistance/100.0){
 					neighbors.push(pair<int, int>(j, d));
 				}
 			}
@@ -452,8 +463,10 @@ void extractDate(int, void*){
 
 			convexHull(filteredContours[i], hull);
 			hull_area += contourArea(hull);
+//			Scalar color = Scalar(rng.uniform(0,255), rng.uniform(0, 255), rng.uniform(0, 255));
 			for(const int &originIndex :  contoursOrigin[i]){
 				cArea += contourArea(contours[originIndex]);
+				drawContours(contoursImg, contours, originIndex, red); 
 			}
 			float solidity = cArea/hull_area;
 			float solidity2 = hull_area / rArea;
@@ -554,15 +567,15 @@ void extractDate(int, void*){
 				//draw red rectangle on date 
 			Point2f rect_points[4]; rects[i].points(rect_points);
 			for( int j = 0; j < 4; j++ )
-				line( src, rect_points[j], rect_points[(j+1)%4], red, 2, 8 );
+				line( contoursImg, rect_points[j], rect_points[(j+1)%4], green, 2, 8 );
 				
-			// Draw contour property value
-			std::ostringstream ss;
-			ss << std::setprecision(0)   << (smallSide / largeSide) ; 
-			Point p = rects[i].center;
-			p.x -= 50;
-			p.y -= 0;
-			cv::putText(contoursImg, ss.str(), p, 0, 0.6, green, 2, 8); 
+			//// Draw contour property value
+			//std::ostringstream ss;
+			//ss << std::setprecision(0)   << (smallSide / largeSide) ; 
+			//Point p = rects[i].center;
+			//p.x -= 50;
+			//p.y -= 0;
+			//cv::putText(contoursImg, ss.str(), p, 0, 0.6, green, 2, 8); 
 			//ss = std::ostringstream();
 			//ss << std::setprecision(0)   << "rAngle: " << rAngle ; 
 			//p.y += 20;
@@ -587,7 +600,7 @@ void extractDate(int, void*){
 		}
 	}
 
-	//imshow(contoursWindow, contoursImg);
+	imshow(contoursWindow, contoursImg);
 }
 
 /** @function main */
@@ -630,7 +643,7 @@ int main(int argc, char** argv)
 	
 	dateMinContoursPoints = 100;
 
-	digitsDistance = imageWidth * 0.02;
+	digitsDistance = 55; // relative to digit size
 	noizeCountourWidth = imageWidth * 0.03;
 	contourRecMaxRatio = 5;
 	maxContourLength = imageWidth * 0.5;
@@ -658,17 +671,17 @@ int main(int argc, char** argv)
 	///// Create a Trackbar for user to enter threshold
 	//createTrackbar("Min Threshold:", canny_window, &cannyLowThreshold, max_lowThreshold, CannyThreshold);
 
-	//char* controlsWindow = "Date Contours Properties";
-	///// Create a window
-	//namedWindow(controlsWindow, CV_WINDOW_FREERATIO);
-	//cv::resizeWindow(controlsWindow, 400, 500);
-	///// Create a Trackbars for user to enter threshold
-	//createTrackbar("Min Height:",				controlsWindow, &dateMinHeight, imageWidth, extractDate);
-	//createTrackbar("Max Height:",				controlsWindow, &dateMaxHeight, imageWidth, extractDate);
-	//createTrackbar("Min Width:",				controlsWindow, &dateMinWidth, imageWidth, extractDate);
-	//createTrackbar("Max Width:",				controlsWindow, &dateMaxWidth, imageWidth, extractDate);
-	//createTrackbar("Digits Splitting Distance:",controlsWindow, &digitsDistance, 100, extractDate);
-	//
+	char* controlsWindow = "Date Contours Properties";
+	/// Create a window
+	namedWindow(controlsWindow, CV_WINDOW_FREERATIO);
+	cv::resizeWindow(controlsWindow, 400, 500);
+	/// Create a Trackbars for user to enter threshold
+	createTrackbar("Min Height:",				controlsWindow, &dateMinHeight, imageWidth, extractDate);
+	createTrackbar("Max Height:",				controlsWindow, &dateMaxHeight, imageWidth, extractDate);
+	createTrackbar("Min Width:",				controlsWindow, &dateMinWidth, imageWidth, extractDate);
+	createTrackbar("Max Width:",				controlsWindow, &dateMaxWidth, imageWidth, extractDate);
+	createTrackbar("Digits Splitting Distance:",controlsWindow, &digitsDistance, 100, extractDate);
+	
 	/////// Create a window
 	//namedWindow(contoursWindow, CV_WINDOW_AUTOSIZE);
 	
