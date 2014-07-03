@@ -104,7 +104,8 @@ void CannyThreshold(int, void*)
 	/// Canny detector
 	Canny(preprocessedImage, detected_edges, cannyLowThreshold, cannyLowThreshold*ratio, kernel_size, true);
 
-	if(!mask.data){
+	//if(!mask.data)
+	{
 		// create mask to select region of interrest
 		mask.create(detected_edges.size(), detected_edges.type());  // create an Mat that has same Dimensons as src
 		mask.setTo(cv::Scalar(0));                                            // creates
@@ -133,14 +134,15 @@ inline Rect getLargestCircleRect(Mat img){
 	/// Convert the image to grayscale
 	cvtColor(img, tmp, CV_BGR2GRAY);
 
-		
+	
 
 	/// Reduce the noise so we avoid false circle detection
-	GaussianBlur( tmp, tmp, Size(9, 9), 3,3 );
-
+	GaussianBlur( tmp, tmp, Size(15,15), 3,3 );
+	//threshold(tmp, tmp, 0, 255, THRESH_OTSU|THRESH_BINARY); 
+	//imshow("", tmp);
 	vector<Vec3f> circles;
 	HoughCircles(tmp, circles, CV_HOUGH_GRADIENT, 2, 
-		img.cols/3, 100, 200, img.cols/6, img.cols/2);
+		img.cols/2, 100, 100, img.cols/4, 0);
 
 	  /// Draw the circles detected
 	int r = 0;
@@ -179,15 +181,15 @@ void preProcessImage(int, void*)
 		return;
 //	Mat b = preprocessedImage; // for image watcher
 	
+	// resize
+	imageHeight = imageWidth * src.rows / src.cols;
+	cv::resize(src, src, cv::Size(imageWidth, imageHeight));
+
 	Rect coinRect = getLargestCircleRect(src);
 	if(coinRect.width & coinRect.height)
 		src = src(coinRect);	
 
 	//rectangle(src, coinRect, Scalar(255,255,0),2);	
-
-	// resize
-	imageHeight = imageWidth * src.rows / src.cols;
-	cv::resize(src, src, cv::Size(imageWidth, imageHeight));
 
 	
 	/// Convert the image to grayscale
@@ -488,14 +490,14 @@ void extractDate(int, void*){
 		float smallSide = MIN(rects[i].size.width, rects[i].size.height);
 		float aspectRatio = smallSide / largeSide;
 		
-		// check window range and some features
+		 ///// --------------- check window range and some features ---------------
 		if(		smallSide < dateMinHeight 
-				 || smallSide > dateMaxHeight 
-				 || largeSide < dateMinWidth 
-				 || largeSide > dateMaxWidth 
-				 || aspectRatio < dateMinAspectRatio
-				 || aspectRatio > dateMaxAspectRatio
-				 || contoursOrigin[i].size() < dateMinContoursCount
+			||	smallSide > dateMaxHeight 
+			||	largeSide < dateMinWidth 
+			||	largeSide > dateMaxWidth 
+			||	aspectRatio < dateMinAspectRatio
+			||	aspectRatio > dateMaxAspectRatio
+			||	contoursOrigin[i].size() < dateMinContoursCount
 			)
 			continue;
 		
@@ -611,13 +613,13 @@ void extractDate(int, void*){
 		for( int j = 0; j < 4; j++ )
 			line( contoursImg, rect_points[j], rect_points[(j+1)%4], red, 2, 8 );
 				
-		 ////Draw contour property value
-		std::ostringstream ss;
-		ss << std::setprecision(0)   << (relativeAngle) ; 
-		Point p = rects[i].center;
-		p.x -= 50;
-		p.y -= 0;
-		cv::putText(contoursImg, ss.str(), p, 0, 0.6, green, 2, 8); 
+		// ////Draw contour property value
+		//std::ostringstream ss;
+		//ss << std::setprecision(0)   << (relativeAngle) ; 
+		//Point p = rects[i].center;
+		//p.x -= 50;
+		//p.y -= 0;
+		//cv::putText(contoursImg, ss.str(), p, 0, 0.6, green, 2, 8); 
 		//ss = std::ostringstream();
 		//ss << std::setprecision(0)   << solidity2 ; 
 		//p.y += 20;
@@ -628,9 +630,9 @@ void extractDate(int, void*){
 		//cv::putText(contoursImg, ss.str(), p, 0, 0.6, Scalar(0,255,255), 2, 8); 
 		//		
 		// draw mean line
-		int lefty = int((- mLine[2] *mLine[1]/mLine[0]) + mLine[3]);
-		int righty = int(((imageWidth-mLine[2])*mLine[1]/mLine[0])+mLine[3]);
-		cv::line(contoursImg,  Point(imageWidth-1,righty), Point(0,lefty),blue,1);	
+		//int lefty = int((- mLine[2] *mLine[1]/mLine[0]) + mLine[3]);
+		//int righty = int(((imageWidth-mLine[2])*mLine[1]/mLine[0])+mLine[3]);
+		//cv::line(contoursImg,  Point(imageWidth-1,righty), Point(0,lefty),blue,1);	
 
 		//draw center line
 		//cv::line(contoursImg, Point(imageWidth/2, imageHeight/2), rects[i].center, blue, 2);
@@ -695,7 +697,7 @@ void processImage(int, void* param){
 
 inline void init(){
 	
-	imageWidth = 500;
+	imageWidth = 600;
 	imageHeight;
 	readDateArgs[0] = 19;
 	readDateArgs[1] = 9;
