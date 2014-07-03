@@ -22,12 +22,12 @@ using namespace std;
 /// Global variables
 
 Mat src, src_gray, src_gray_rotated;
-Mat preprocessed, detected_edges, canny_dst, cropped;
+Mat preprocessedImage, detected_edges, dateCroppedImage;
 Mat mask;
 Mat ocrImage;
 Mat contoursImg;
 
-int const imageWidth = 600;
+int const imageWidth = 500;
 int imageHeight;
 int edgeThresh = 1;
 int bluringFactor = 15;
@@ -37,6 +37,15 @@ int const max_lowThreshold = 100;
 int const maxBluringFactor = 99;
 
 int preRotationAngle = 0;
+
+int ratio = 3;
+int kernel_size = 3;
+char* canny_window = "Edge Map";
+char* bluringWindow = "Bluring";
+char* contoursWindow = "Contours";
+char* resultWindow = "Date";
+
+int readDateArgs[2];
 
 //Date Contours Properties
 int dateMinHeight;
@@ -61,15 +70,6 @@ int minContourLength;
 int noizeCountourWidth;
 int digitsDistance;
 
-int ratio = 3;
-int kernel_size = 3;
-char* canny_window = "Edge Map";
-char* bluringWindow = "Bluring";
-char* contoursWindow = "Contours";
-char* resultWindow = "Date";
-
-int readDateArgs[2];
-
 
 std::vector<std::vector<Point> > contours;
 std::vector<Vec4i> hierarchy;
@@ -84,6 +84,7 @@ RNG rng(12345);
 
 enum PROCESSING_STAGE{
 	STAGE_PREPROCESS_IMAGE,
+	STAGE_EXTRACT_COIN,
 	STAGE_CANNY_THRESHOLD,
 	STAGE_EXTRACT_DATE_RECT,
 	STAGE_PREPROCESS_DATE_IMAGE,
@@ -98,13 +99,15 @@ void CannyThreshold(int, void*)
 	if(last_cannyLowThreshold == cannyLowThreshold)
 		return;
 	last_cannyLowThreshold = cannyLowThreshold;
-	// for image watcher
-	Mat d =canny_dst;
-	Mat b = preprocessed;
-	Mat de = detected_edges;
+	if(!preprocessedImage.data)
+		return;
+	
+	//// for image watcher
+	//Mat b = preprocessedImage;
+	//Mat de = detected_edges;
 	
 	/// Canny detector
-	Canny(preprocessed, detected_edges, cannyLowThreshold, cannyLowThreshold*ratio, kernel_size, true);
+	Canny(preprocessedImage, detected_edges, cannyLowThreshold, cannyLowThreshold*ratio, kernel_size, true);
 
 	if(!mask.data){
 		// create mask to select region of interrest
@@ -125,20 +128,85 @@ void CannyThreshold(int, void*)
 	detected_edges = masked;
 	
 }
+
+inline Rect getLargestCircleRect(Mat img){
+	if(!img.data)
+		return Rect();
+	
+	Mat tmp;
+	
+	/// Convert the image to grayscale
+	cvtColor(img, tmp, CV_BGR2GRAY);
+
+		
+
+	/// Reduce the noise so we avoid false circle detection
+	GaussianBlur( tmp, tmp, Size(9, 9), 3,3 );
+
+	vector<Vec3f> circles;
+	HoughCircles(tmp, circles, CV_HOUGH_GRADIENT, 2, 
+		img.cols/3, 100, 200, img.cols/6, img.cols/2);
+
+	  /// Draw the circles detected
+	int r = 0;
+	Point c;
+	for( size_t i = 0; i < circles.size(); i++ )
+	{
+		Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+		int radius = cvRound(circles[i][2]);
+		
+		if(r < radius){
+			c = center;
+			r = radius;
+		}
+
+		//// circle center
+		//circle( src_gray, center, 3, Scalar(0,255,0), -1, 8, 0 );
+		// circle outline
+		//circle( img, center, radius, Scalar(0,0,255), 3, 8, 0 );
+	}
+	if(circles.size() > 0){
+		// return largest circle rect
+		int x = c.x-r, y = c.y-r, w = r * 2;
+		//range check, if((unsigned)(number-lower) <= (upper-lower) ) inRange(number)
+		if ((unsigned)x <= img.cols &&
+			(unsigned)y <= img.rows &&
+			(unsigned)(x+w) <= img.cols &&
+			(unsigned)(y+w) <= img.rows )
+		return Rect(x, y, w,w);
+	}
+	return Rect();
+}
+
 void preProcessImage(int, void*)
 {
 	static int lastBluringFactor = 0;
 	if(lastBluringFactor == bluringFactor)
 		return;
-//	Mat b = preprocessed; // for image watcher
+	if(!src.data)
+		return;
+//	Mat b = preprocessedImage; // for image watcher
 	
+	Rect coinRect = getLargestCircleRect(src);
+	src = src(coinRect);	
+
+	//rectangle(src, coinRect, Scalar(255,255,0),2);	
+
+	// resize
+	imageHeight = imageWidth * src.rows / src.cols;
+	cv::resize(src, src, cv::Size(imageWidth, imageHeight));
+
+	
+	/// Convert the image to grayscale
+	cvtColor(src, src_gray, CV_BGR2GRAY);
 
 	/// Reduce noise with a kernel 3x3
 	bluringFactor |= 0x1; // make it odd number
-	//blur(src_gray, preprocessed, Size(bluringFactor,bluringFactor));
-	//medianBlur(src_gray, preprocessed, bluringFactor); 
-	//bilateralFilter ( src_gray, preprocessed, bluringFactor, bluringFactor*2, bluringFactor/2 );
-	GaussianBlur(src_gray, preprocessed, cv::Size(bluringFactor,bluringFactor), 3, 0);
+	//blur(src_gray, preprocessedImage, Size(bluringFactor,bluringFactor));
+	//medianBlur(src_gray, preprocessedImage, bluringFactor); 
+	//bilateralFilter ( src_gray, preprocessedImage, bluringFactor, bluringFactor*2, bluringFactor/2 );
+	GaussianBlur(src_gray, preprocessedImage, cv::Size(bluringFactor,bluringFactor), 3, 0);
+
 
 }
 
@@ -239,10 +307,8 @@ public:
 std::string ocrNumber(int, void*){
 	if(!ocrImage.data)
 		return "";
-	//CHiResTimer timer;
-	//timer.Init();
-	//timer.GetElapsedMilliSeconds();
-    tesseract::TessBaseAPI tess;
+	
+	tesseract::TessBaseAPI tess;
     tess.Init(NULL, "eng", tesseract::OEM_DEFAULT);
     tess.SetVariable("tessedit_char_whitelist", "0l23456789"); // 1 replaced with l char to work around '1' proplem
 	tess.SetPageSegMode(tesseract::PSM_SINGLE_WORD);
@@ -261,10 +327,8 @@ std::string ocrNumber(int, void*){
 
 void preprocessDate(int, void*){
 
-	if(!cropped.data)
+	if(!dateCroppedImage.data)
 		return;
-			//int msec = timer.GetElapsedMilliSeconds();
-			//std::cout << "Date rectangle extracting time: " << msec << " msec\n";
 
 			// OCR extracted image
 			//char* strTest = "2010";
@@ -275,7 +339,7 @@ void preprocessDate(int, void*){
 
 
 
-			GaussianBlur(cropped, ocrImage, cv::Size(7,7), 3, 0);
+			GaussianBlur(dateCroppedImage, ocrImage, cv::Size(7,7), 3, 0);
 			//threshold(ocrImage, ocrImage,0,255,THRESH_BINARY_INV|THRESH_OTSU);
 			adaptiveThreshold(ocrImage, ocrImage, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, readDateArgs[0]|0x1,readDateArgs[1]); 
 			//cv::morphologyEx( ocrImage, ocrImage, cv::MORPH_ERODE, Mat(),Point(-1,-1), 1);
@@ -288,14 +352,14 @@ void preprocessDate(int, void*){
 			//Canny(ocrImage, dateEdges, threshold, threshold*ratio, kernel_size);
 			//cv::morphologyEx( dateEdges, dateEdges, cv::MORPH_CLOSE, Mat());
 			//
-			////GaussianBlur(cropped, ocrImage, cv::Size(9,9), 3, 0);
+			////GaussianBlur(dateCroppedImage, ocrImage, cv::Size(9,9), 3, 0);
 			//ocrImage = dateEdges;
 
 			//std::vector<std::vector<cv::Point> > croppedContours;
 			//vector<Vec4i> hierarchy;
 			//findContours( ocrImage, croppedContours, hierarchy,
 			//	CV_RETR_TREE, CV_CHAIN_APPROX_NONE);
-			//ocrImage = Mat( cropped.size(), CV_8UC1, Scalar(0) );
+			//ocrImage = Mat( dateCroppedImage.size(), CV_8UC1, Scalar(0) );
 			//CvMat ocrImgC(ocrImage);
 			//int idx;
 			////for( ; idx >= 0; idx = hierarchy[idx][0] )
@@ -317,12 +381,9 @@ void preprocessDate(int, void*){
 
 			//}
 
-			//	
-			////std::cout << "OCR preprocessing time: " << timer.GetElapsedMilliSeconds() << " msec\n";
-			//
 			
 			// calculate mean of date rect
-			//Scalar mean = cv::mean(cropped);
+			//Scalar mean = cv::mean(dateCroppedImage);
 
 			// save to filtered rects
 			//tmp.push_back(rects[i]);
@@ -330,7 +391,9 @@ void preprocessDate(int, void*){
 
 }
 void extractDate(int, void*){
-
+	if(!detected_edges.data || 
+		!src_gray.data)
+		return;
 	Scalar white(255, 255, 255);
 	Scalar red(0, 0, 255);
 	Scalar blue(255,0,0);
@@ -382,7 +445,7 @@ void extractDate(int, void*){
 					continue; // too far 
 				// ToDo: check if one contains other
 				
-	float d = p2pDistance(rects[i].center, rects[j].center);
+				float d = p2pDistance(rects[i].center, rects[j].center);
 				if(d > dateMaxWidth)
 					continue;
 				
@@ -433,10 +496,10 @@ void extractDate(int, void*){
 		float aspectRatio = smallSide / largeSide;
 		
 		// check window range and some features
-		if(		smallSide < dateMinHeight ||
-				smallSide > dateMaxHeight ||
-				largeSide < dateMinWidth ||
-				largeSide > dateMaxWidth 
+		if(		smallSide < dateMinHeight 
+				 || smallSide > dateMaxHeight 
+				 || largeSide < dateMinWidth 
+				 || largeSide > dateMaxWidth 
 				|| aspectRatio < dateMinAspectRatio
 				|| aspectRatio > dateMaxAspectRatio
 				|| contoursOrigin[i].size() < dateMinContoursCount
@@ -530,23 +593,23 @@ void extractDate(int, void*){
 		////----------------------------------------------------------------------------
 		////---------------------- Draw date contours transformed (rotated)-------------
 		////----------------------------------------------------------------------------
-		// Mat cropped = Mat::zeros( detected_edges.size(), CV_8UC1 );
+		// Mat dateCroppedImage = Mat::zeros( detected_edges.size(), CV_8UC1 );
 		//for(const int &originIndex :  contoursOrigin[i]){
 		//		cv::transform(contours[originIndex], contours[originIndex], M);
-		//		drawContours(cropped, contours, originIndex, Scalar(255), -1);
+		//		drawContours(dateCroppedImage, contours, originIndex, Scalar(255), -1);
 		//}
 		//int x = rects[i].center.x - largeSide /2;
 		//int y = rects[i].center.y - smallSide /2;
 		//Rect rotatedRect(x, y, largeSide, smallSide);
-		//cropped = cropped(rotatedRect);
+		//dateCroppedImage = dateCroppedImage(rotatedRect);
 		////-------------------------------------- OR -----------------------------------
 		////------------------------ extract date from source image ----------------
 		////-----------------------------------------------------------------------------
-		cropped = Mat::zeros( src.size(), src_gray.type() );
+		dateCroppedImage = Mat::zeros( src_gray.size(), src_gray.type() );
 		// perform the affine transformation
-		warpAffine(src_gray, cropped, M, src.size(), CV_INTER_LINEAR);
+		warpAffine(src_gray, dateCroppedImage, M, src_gray.size(), CV_INTER_LINEAR);
 		// crop the resulting image
-		getRectSubPix(cropped, Size(largeSide+8, smallSide+8), rects[i].center, cropped);
+		getRectSubPix(dateCroppedImage, Size(largeSide+8, smallSide+8), rects[i].center, dateCroppedImage);
 		////==============================================================================
 
 			
@@ -587,26 +650,11 @@ void extractDate(int, void*){
 		break; // just first detected date 
 	}
 }
-void cropCoinImage(int, void*){
-	
-	vector<Vec3f> circles;
-	HoughCircles( preprocessed, circles, CV_HOUGH_GRADIENT, 1, src_gray.rows/8, 200, 100, 0, 0 );
-	  /// Draw the circles detected
-	for( size_t i = 0; i < circles.size(); i++ )
-	{
-		Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
-		int radius = cvRound(circles[i][2]);
-		// circle center
-		circle( src, center, 3, Scalar(0,255,0), -1, 8, 0 );
-		// circle outline
-		circle( src, center, radius, Scalar(0,0,255), 3, 8, 0 );
-	}
-
-}
-
 void processImage(int, void* param){
+	
 	CHiResTimer timer;
 	timer.Init();
+	
 	// pre rotate
 	//Mat M = getRotationMatrix2D(Point(imageWidth/2, imageHeight/2), preRotationAngle, 1.0);
 	//warpAffine(src_gray, src_gray_rotated, M, src_gray.size(), INTER_NEAREST);
@@ -614,23 +662,21 @@ void processImage(int, void* param){
 	if (pStage != NULL) stage = *pStage;
 	
 	if(stage <=  STAGE_PREPROCESS_IMAGE){
+		
 		preProcessImage(0,0);
+
 		//int msec = timer.GetElapsedMilliSeconds();
 		//std::cout << "Bluring time: " << msec << " msec\n";
-		//imshow(bluringWindow, preprocessed);
+		imshow(bluringWindow, preprocessedImage);
 	}
-	cropCoinImage(0,0);
 	
 	if(stage <= STAGE_CANNY_THRESHOLD){
 		CannyThreshold(0,0);
+		imshow(canny_window, detected_edges);
 	
 		//int msec = timer.GetElapsedMilliSeconds();
 		//std::cout << "Edge detecting time: " << msec << " msec\n";
-		// Using Canny's output as a mask, we display our result
-		//canny_dst = Scalar::all(0);
 
-		//src.copyTo(canny_dst, detected_edges);
-		//imshow(canny_window, canny_dst);
 	}
 	
 	if(stage <= STAGE_EXTRACT_DATE_RECT){
@@ -638,36 +684,23 @@ void processImage(int, void* param){
 		imshow(contoursWindow, contoursImg);
 	}
 	
-	if(stage <= STAGE_OCR_DATE){
+	if(stage <= STAGE_PREPROCESS_DATE_IMAGE){
 		preprocessDate(0,0);
-		imshow(resultWindow, ocrImage);
+		if(ocrImage.data)
+			imshow(resultWindow, ocrImage);
 	}
 	if(stage <= STAGE_OCR_DATE){
 		ocrNumber(0,0);
 	}
+	
+	cout << "Processing time: " << timer.GetElapsedMilliSeconds() << " msec.\n";
+	imshow("Original", src);
 }
 
 /** @function main */
-int main(int argc, char** argv)
-{
-	if(argc < 2)
-		return -1;
 
-	CHiResTimer timer;
-	timer.Init();
-	timer.GetElapsedMilliSeconds();
-	/// Load an image
-	src = imread(argv[1]);
-
-	if (!src.data)
-	{
-		return -1;
-	}
-
-	// resize
-	imageHeight = imageWidth * src.rows / src.cols;
-	cv::resize(src, src, cv::Size(imageWidth, imageHeight));
-
+inline void setThresholds(){
+	
 	dateMinWidth = imageWidth * 0.16;
 	dateMinHeight = imageWidth * 0.058;
 	dateMaxWidth = imageWidth * 0.204;
@@ -687,22 +720,34 @@ int main(int argc, char** argv)
 	
 	dateMinContoursPoints = 100;
 
-	digitsDistance = 55; // relative to digit size
+	digitsDistance = 70; // relative to digit size
 	noizeCountourWidth = imageWidth * 0.03;
 	contourRecMaxRatio = 5;
 	maxContourLength = imageWidth * 0.5;
 	minContourLength = imageWidth * 0.03;
+	
+	readDateArgs[0] = 19;
+	readDateArgs[1] = 9;
 
-	/// Create a matrix of the same type and size as src (for canny_dst)
-	canny_dst.create(src.size(), src.type());
+}
 
-	/// Convert the image to grayscale
-	cvtColor(src, src_gray, CV_BGR2GRAY);
+int main(int argc, char** argv)
+{
+	if(argc < 2)
+		return -1;
 
+	/// Load an image
+	src = imread(argv[1]);
+
+	if (!src.data)
+	{
+		return -1;
+	}
+	setThresholds();
 
 	//
 	///// Create a window
-	//namedWindow(bluringWindow, CV_WINDOW_AUTOSIZE);
+	namedWindow(bluringWindow, CV_WINDOW_AUTOSIZE);
 	//
 	///// Create a Trackbar for user to enter threshold
 	//createTrackbar("Bluring factor:", bluringWindow, &bluringFactor, maxBluringFactor, preProcessImage);
@@ -719,34 +764,28 @@ int main(int argc, char** argv)
 	/// Create a window
 	namedWindow(controlsWindow, CV_WINDOW_FREERATIO);
 	cv::resizeWindow(controlsWindow, 400, 500);
+	
+	PROCESSING_STAGE extractDate = STAGE_EXTRACT_DATE_RECT;
+
 	/// Create a Trackbars for user to enter threshold
-	createTrackbar("Min Height:",				controlsWindow, &dateMinHeight, imageWidth, processImage);
-	createTrackbar("Max Height:",				controlsWindow, &dateMaxHeight, imageWidth, processImage);
-	createTrackbar("Min Width:",				controlsWindow, &dateMinWidth, imageWidth, processImage);
-	createTrackbar("Max Width:",				controlsWindow, &dateMaxWidth, imageWidth, processImage);
-	createTrackbar("Digits Splitting Distance:",controlsWindow, &digitsDistance, 100, processImage);
+	createTrackbar("Min Height:",				controlsWindow, &dateMinHeight, imageWidth, processImage, &extractDate);
+	createTrackbar("Max Height:",				controlsWindow, &dateMaxHeight, imageWidth, processImage, &extractDate);
+	createTrackbar("Min Width:",				controlsWindow, &dateMinWidth, imageWidth, processImage, &extractDate);
+	createTrackbar("Max Width:",				controlsWindow, &dateMaxWidth, imageWidth, processImage, &extractDate);
+	createTrackbar("Digits Splitting Distance:",controlsWindow, &digitsDistance, 100, processImage, &extractDate);
 	
 	/////// Create a window
 	//namedWindow(contoursWindow, CV_WINDOW_AUTOSIZE);
 	
 	///// Create a window
 	namedWindow(resultWindow, CV_WND_PROP_ASPECTRATIO);
-	readDateArgs[0] = 19;
-	readDateArgs[1] = 9;
-	PROCESSING_STAGE ps = STAGE_PREPROCESS_DATE_IMAGE;
-	createTrackbar("read date arg1:", resultWindow, readDateArgs , 100, processImage, (void*)&ps);
-	createTrackbar("read date arg2:", resultWindow, readDateArgs+1 , 100, processImage, (void*)&ps);
+	PROCESSING_STAGE dateImageStage = STAGE_PREPROCESS_DATE_IMAGE;
+	createTrackbar("arg1:", resultWindow, readDateArgs , 100, processImage, (void*)&dateImageStage);
+	createTrackbar("arg2:", resultWindow, readDateArgs+1 , 100, processImage, (void*)&dateImageStage);
 
 
-	/// Show the image
 	processImage(0,0);
-	//preRotate(0, 0);
-	//CannyThreshold(0, 0);
 
-	cout << "Total processing time: " << timer.GetElapsedMilliSeconds() << " msec.\n";
-
-	
-	imshow("Original", src);
 	/// Wait until user exit program by pressing a key
 	waitKey(0);
 
