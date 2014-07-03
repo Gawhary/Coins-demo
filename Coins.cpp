@@ -15,6 +15,7 @@
 //#include "cvBlob\cvblob.h"
 #include <tesseract/baseapi.h>
 
+#include "dirent.h"
 
 using namespace cv;
 using namespace std;
@@ -27,23 +28,21 @@ Mat mask;
 Mat ocrImage;
 Mat contoursImg;
 
-int const imageWidth = 500;
+int imageWidth;
 int imageHeight;
-int edgeThresh = 1;
-int bluringFactor = 15;
-int cannyLowThreshold = 16;
+int edgeThresh;
+int bluringFactor;
+int cannyLowThreshold;
 int detectPressed;
-int const max_lowThreshold = 100;
-int const maxBluringFactor = 99;
 
-int preRotationAngle = 0;
+int preRotationAngle;
 
-int ratio = 3;
-int kernel_size = 3;
-char* canny_window = "Edge Map";
-char* bluringWindow = "Bluring";
-char* contoursWindow = "Contours";
-char* resultWindow = "Date";
+int ratio;
+int kernel_size;
+char* canny_window;
+char* bluringWindow;
+char* contoursWindow;
+char* resultWindow;
 
 int readDateArgs[2];
 
@@ -95,10 +94,6 @@ void extractDate(int, void*);
 
 void CannyThreshold(int, void*)
 {
-	static int last_cannyLowThreshold = -1;
-	if(last_cannyLowThreshold == cannyLowThreshold)
-		return;
-	last_cannyLowThreshold = cannyLowThreshold;
 	if(!preprocessedImage.data)
 		return;
 	
@@ -180,15 +175,13 @@ inline Rect getLargestCircleRect(Mat img){
 
 void preProcessImage(int, void*)
 {
-	static int lastBluringFactor = 0;
-	if(lastBluringFactor == bluringFactor)
-		return;
 	if(!src.data)
 		return;
 //	Mat b = preprocessedImage; // for image watcher
 	
 	Rect coinRect = getLargestCircleRect(src);
-	src = src(coinRect);	
+	if(coinRect.width & coinRect.height)
+		src = src(coinRect);	
 
 	//rectangle(src, coinRect, Scalar(255,255,0),2);	
 
@@ -449,8 +442,8 @@ void extractDate(int, void*){
 				if(d > dateMaxWidth)
 					continue;
 				
-				d = c2cRelativeDistance(filteredContours[i], filteredContours[j]);
-				if(d < (float)digitsDistance/100.0){
+				d = c2cDistance(filteredContours[i], filteredContours[j]);
+				if(d < digitsDistance){
 					neighbors.push(pair<int, int>(j, d));
 				}
 			}
@@ -500,9 +493,9 @@ void extractDate(int, void*){
 				 || smallSide > dateMaxHeight 
 				 || largeSide < dateMinWidth 
 				 || largeSide > dateMaxWidth 
-				|| aspectRatio < dateMinAspectRatio
-				|| aspectRatio > dateMaxAspectRatio
-				|| contoursOrigin[i].size() < dateMinContoursCount
+				 || aspectRatio < dateMinAspectRatio
+				 || aspectRatio > dateMaxAspectRatio
+				 || contoursOrigin[i].size() < dateMinContoursCount
 			)
 			continue;
 		
@@ -513,10 +506,10 @@ void extractDate(int, void*){
 
 		convexHull(filteredContours[i], hull);
 		hull_area += contourArea(hull);
-//			Scalar color = Scalar(rng.uniform(0,255), rng.uniform(0, 255), rng.uniform(0, 255));
+			Scalar randColor = Scalar(rng.uniform(0,255), rng.uniform(0, 255), rng.uniform(0, 255));
 		for(const int &originIndex :  contoursOrigin[i]){
 			cArea += contourArea(contours[originIndex]);
-			drawContours(contoursImg, contours, originIndex, red); 
+			drawContours(contoursImg, contours, originIndex, randColor); 
 		}
 		float solidity = cArea/hull_area;
 		float solidity2 = hull_area / rArea;
@@ -525,7 +518,7 @@ void extractDate(int, void*){
 		double l = arcLength(filteredContours[i], false);
 		//Point2f mc = massCenter(filteredContours[i]);
 		Vec4f mLine;
-		fitLine( filteredContours[i], mLine, CV_DIST_L12, 0, 0.01, 0.01); 
+		fitLine( filteredContours[i], mLine, CV_DIST_L2, 0, 0.01, 0.01); 
 		float lAngle = atan2(mLine[1], mLine[0]) * 180.0 / M_PI ;
 		float rAngle = rects[i].angle;
 		float centeralAngle = atan2(	rects[i].center.y - imageHeight/2,	// arctan(y2-y1 / x2-x1)
@@ -616,17 +609,17 @@ void extractDate(int, void*){
 			//draw red rectangle on date 
 		Point2f rect_points[4]; rects[i].points(rect_points);
 		for( int j = 0; j < 4; j++ )
-			line( contoursImg, rect_points[j], rect_points[(j+1)%4], green, 2, 8 );
+			line( contoursImg, rect_points[j], rect_points[(j+1)%4], red, 2, 8 );
 				
-		//// Draw contour property value
-		//std::ostringstream ss;
-		//ss << std::setprecision(0)   << (smallSide / largeSide) ; 
-		//Point p = rects[i].center;
-		//p.x -= 50;
-		//p.y -= 0;
-		//cv::putText(contoursImg, ss.str(), p, 0, 0.6, green, 2, 8); 
+		 ////Draw contour property value
+		std::ostringstream ss;
+		ss << std::setprecision(0)   << (relativeAngle) ; 
+		Point p = rects[i].center;
+		p.x -= 50;
+		p.y -= 0;
+		cv::putText(contoursImg, ss.str(), p, 0, 0.6, green, 2, 8); 
 		//ss = std::ostringstream();
-		//ss << std::setprecision(0)   << "rAngle: " << rAngle ; 
+		//ss << std::setprecision(0)   << solidity2 ; 
 		//p.y += 20;
 		//cv::putText(contoursImg, ss.str(), p, 0, 0.6, red, 2, 8); 
 		//ss = std::ostringstream();
@@ -634,10 +627,10 @@ void extractDate(int, void*){
 		//p.y += 20;
 		//cv::putText(contoursImg, ss.str(), p, 0, 0.6, Scalar(0,255,255), 2, 8); 
 		//		
-		//// draw mean line
-		//int lefty = int((- mLine[2] *mLine[1]/mLine[0]) + mLine[3]);
-		//int righty = int(((imageWidth-mLine[2])*mLine[1]/mLine[0])+mLine[3]);
-		//cv::line(contoursImg,  Point(imageWidth-1,righty), Point(0,lefty),blue,1);	
+		// draw mean line
+		int lefty = int((- mLine[2] *mLine[1]/mLine[0]) + mLine[3]);
+		int righty = int(((imageWidth-mLine[2])*mLine[1]/mLine[0])+mLine[3]);
+		cv::line(contoursImg,  Point(imageWidth-1,righty), Point(0,lefty),blue,1);	
 
 		//draw center line
 		//cv::line(contoursImg, Point(imageWidth/2, imageHeight/2), rects[i].center, blue, 2);
@@ -647,14 +640,15 @@ void extractDate(int, void*){
 		//circle(contoursImg, rects[i].center, 5, red, CV_FILLED);  
 		//
 
-		break; // just first detected date 
+		//break; // just first detected date 
 	}
 }
 void processImage(int, void* param){
 	
 	CHiResTimer timer;
 	timer.Init();
-	
+	timer.GetElapsedMilliSeconds();
+
 	// pre rotate
 	//Mat M = getRotationMatrix2D(Point(imageWidth/2, imageHeight/2), preRotationAngle, 1.0);
 	//warpAffine(src_gray, src_gray_rotated, M, src_gray.size(), INTER_NEAREST);
@@ -699,58 +693,64 @@ void processImage(int, void* param){
 
 /** @function main */
 
-inline void setThresholds(){
+inline void init(){
 	
+	imageWidth = 500;
+	imageHeight;
+	readDateArgs[0] = 19;
+	readDateArgs[1] = 9;
+	edgeThresh = 1;
+	bluringFactor = 15;
+	cannyLowThreshold = 16;
+	detectPressed;
+
+	preRotationAngle = 0;
+
+	ratio = 3;
+	kernel_size = 3;
+	canny_window = "Edge Map";
+	bluringWindow = "Bluring";
+	contoursWindow = "Contours";
+	resultWindow = "Date";
+
 	dateMinWidth = imageWidth * 0.16;
 	dateMinHeight = imageWidth * 0.058;
 	dateMaxWidth = imageWidth * 0.204;
 	dateMaxHeight = imageWidth * 0.11;
 	
 	dateMinAspectRatio = 0.3;
-	dateMaxAspectRatio = 0.45;
+	dateMaxAspectRatio = 0.50;
 		
-	dateMinExtent = 0.3;
-	dateMinSolidity = 0.2;
+	dateMinExtent = 0.15;
+	dateMinSolidity = 0.15;
 	dateMinSolidity2 = 0.7;
 	dateMinContoursPoints = 270;
-	dateMinContoursCount = 5;
+	dateMinContoursCount = 4;
 	dateMaxDeviationAngle = 10.0;
 	dateMinRelativeAngle = 15.0;
 	dateMaxRelativeAngle = 45.0;
 	
 	dateMinContoursPoints = 100;
 
-	digitsDistance = 70; // relative to digit size
+	digitsDistance = 0.02 * imageWidth;
 	noizeCountourWidth = imageWidth * 0.03;
 	contourRecMaxRatio = 5;
 	maxContourLength = imageWidth * 0.5;
 	minContourLength = imageWidth * 0.03;
 	
-	readDateArgs[0] = 19;
-	readDateArgs[1] = 9;
 
 }
-
-int main(int argc, char** argv)
-{
-	if(argc < 2)
-		return -1;
-
-	/// Load an image
-	src = imread(argv[1]);
-
-	if (!src.data)
-	{
-		return -1;
-	}
-	setThresholds();
-
+inline void createGUI(){
+	static bool firstCall = true;
+	if(!firstCall)
+		return;
+	firstCall = false;
 	//
 	///// Create a window
 	namedWindow(bluringWindow, CV_WINDOW_AUTOSIZE);
 	//
 	///// Create a Trackbar for user to enter threshold
-	//createTrackbar("Bluring factor:", bluringWindow, &bluringFactor, maxBluringFactor, preProcessImage);
+	//createTrackbar("Bluring factor:", bluringWindow, &bluringFactor, 100, preProcessImage);
 	///// Create a Trackbar for user to enter threshold
 	//createTrackbar("Rotation Angle:", bluringWindow, &preRotationAngle, 720, preRotate);
 
@@ -758,7 +758,7 @@ int main(int argc, char** argv)
 	//namedWindow(canny_window, CV_WINDOW_AUTOSIZE);
 
 	///// Create a Trackbar for user to enter threshold
-	//createTrackbar("Min Threshold:", canny_window, &cannyLowThreshold, max_lowThreshold, CannyThreshold);
+	//createTrackbar("Min Threshold:", canny_window, &cannyLowThreshold, 100, CannyThreshold);
 
 	char* controlsWindow = "Date Contours Properties";
 	/// Create a window
@@ -783,11 +783,55 @@ int main(int argc, char** argv)
 	createTrackbar("arg1:", resultWindow, readDateArgs , 100, processImage, (void*)&dateImageStage);
 	createTrackbar("arg2:", resultWindow, readDateArgs+1 , 100, processImage, (void*)&dateImageStage);
 
+}
+int main(int argc, char** argv)
+{
+	if(argc < 2)
+		return -1;
+	
+	bool isDir = false;
+	for(int a = 1; a < argc-1; a++)
+		if(strcmp(argv[a], "-d") == 0){
+			isDir = true;
+			break;
+		}
+	vector<string> files;
 
-	processImage(0,0);
+   if(isDir){
+		DIR *dir;struct dirent *ent;
+		string path = argv[argc-1];
+		if ((dir = opendir (path.c_str())) != NULL) {
+			path.append("/");
+		   while ((ent = readdir (dir)) != NULL) 
+			   files.push_back(path+ent->d_name);
+		   closedir (dir);
+	   }
+	}
+	else{
+		files.push_back( argv[argc-1]);
+	}
+	init();
+	createGUI();
+	for(auto f: files){
+		/// Load an image
+		src = imread(f);
 
-	/// Wait until user exit program by pressing a key
-	waitKey(0);
+		if (!src.data || (src.rows & src.cols) == 0)
+		{
+			cerr << "Can't read image file: " << f << endl;
+			continue;
+		}
 
+	
+		processImage(0,0);
+
+		/// Wait until user exit program by pressing a key
+		if(waitKey(0)==27)
+			return 0;
+
+		// get next file
+	
+	}
+		
 	return 0;
 }
